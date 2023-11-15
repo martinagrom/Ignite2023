@@ -25,6 +25,7 @@ The flows runs through all guests in the M365 tenant and send an email with a no
 | 03-SendGuestsEmails.json | Azure Logic App | The flow reads all inactive users from the storage table, and sends out an email to each inactive guest and a summary to the admins. |
 | 04-DeleteInactiveGuests.json | Azure Logic App | The flow reads all inactive users that should be deleted today from the storage table, deletes them, and sends out an email to each guest about the account deletion and a summary to the admins. |
 | guestscleanup | Azure Table Storage | This is a helper table for storing the users, and if and when they shall be deleted. This table can be created manually, or any other table storage can be used, like a SharePoint list, or similar. |
+| guestslifecycle.pbix | Power BI | This file demonstrates how the data from the storage table can be filtered and visualized the results of the flows. |
 
 Currently, the flows are available as it. A version for the complete solution with ARM Deployment will be available soon.
 I hope the session was helpful in providing some ideas and automating your Guest Lifecycle processes. If you have any questions, please feel free to contact me.
