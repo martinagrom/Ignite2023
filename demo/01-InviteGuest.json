@@ -1,0 +1,470 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "CheckDuplicates": {
+                "actions": {
+                    "CallGT365InviteGuest": {
+                        "inputs": {
+                            "authentication": {
+                                "audience": "https://graph.microsoft.com/",
+                                "authority": "https://login.microsoft.com",
+                                "clientId": "@parameters('appid')",
+                                "secret": "@body('GetAppSecret')?['value']",
+                                "tenant": "@parameters('tenantid')",
+                                "type": "ActiveDirectoryOAuth"
+                            },
+                            "body": {
+                                "invitedUserDisplayName": "@{triggerBody()?['Firstname']} @{triggerBody()?['Lastname']}",
+                                "invitedUserEmailAddress": "@{triggerBody()?['Title']}",
+                                "inviteredirecturl": "https://www.atwork.at",
+                                "more": {
+                                    "justification": "-",
+                                    "sponsor": "@{triggerBody()?['Sponsor']?['Email']}",
+                                    "validto": "@{triggerBody()?['Validto']}"
+                                },
+                                "requestedby": "@{triggerBody()?['Author']?['Email']}",
+                                "sendinvitationmessage": false,
+                                "sponsor": "@{triggerBody()?['Sponsor']?['Email']}"
+                            },
+                            "method": "POST",
+                            "uri": "https://gt365devapp.azurewebsites.net/api/InviteGuest"
+                        },
+                        "runAfter": {},
+                        "type": "Http"
+                    },
+                    "CheckCreated": {
+                        "actions": {
+                            "Parse_JSON": {
+                                "inputs": {
+                                    "content": "@body('CallGT365InviteGuest')",
+                                    "schema": {
+                                        "properties": {
+                                            "id": {
+                                                "type": "string"
+                                            },
+                                            "inviteRedeemUrl": {
+                                                "type": "string"
+                                            },
+                                            "invitedUserEmailAddress": {
+                                                "type": "string"
+                                            },
+                                            "sendInvitationMessage": {
+                                                "type": "boolean"
+                                            },
+                                            "status": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "type": "object"
+                                    }
+                                },
+                                "runAfter": {
+                                    "setuserid": [
+                                        "Succeeded"
+                                    ]
+                                },
+                                "type": "ParseJson"
+                            },
+                            "getmailtemplate": {
+                                "inputs": {
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                                        }
+                                    },
+                                    "method": "get",
+                                    "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/GT365'))}/files/@{encodeURIComponent('%252fShared%2bDocuments%252f02-InviteGuest-email.html')}/content",
+                                    "queries": {
+                                        "inferContentType": true
+                                    }
+                                },
+                                "metadata": {
+                                    "%252fShared%2bDocuments%252f02-InviteGuest-email.html": "/Shared Documents/02-InviteGuest-email.html",
+                                    "%252fShared%2bDocuments%252fTemplates%252finviteguest.html": "/Shared Documents/Templates/inviteguest.html",
+                                    "%252fShared%2bDocuments%252finviteguest.html": "/Shared Documents/inviteguest.html",
+                                    "%252fShared%2bDocuments%252fnewsletter.html": "/Shared Documents/newsletter.html"
+                                },
+                                "runAfter": {
+                                    "updateok": [
+                                        "Succeeded"
+                                    ]
+                                },
+                                "type": "ApiConnection"
+                            },
+                            "replacebody": {
+                                "inputs": {
+                                    "name": "body",
+                                    "value": "@{replace(replace(body('getmailtemplate'),'[email]',triggerBody()?['Title']),'[userid]',body('Parse_JSON')?['id'])}"
+                                },
+                                "runAfter": {
+                                    "getmailtemplate": [
+                                        "Succeeded"
+                                    ]
+                                },
+                                "type": "SetVariable"
+                            },
+                            "setuserid": {
+                                "inputs": {
+                                    "name": "userid",
+                                    "value": "@{body('CallGT365InviteGuest')}"
+                                },
+                                "runAfter": {},
+                                "type": "SetVariable"
+                            },
+                            "updateok": {
+                                "inputs": {
+                                    "body": {
+                                        "Done": true,
+                                        "Status": "Guest user has been created",
+                                        "StatusCode": 3,
+                                        "Title": "@triggerBody()?['Title']"
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                                        }
+                                    },
+                                    "method": "patch",
+                                    "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/Ignite'))}/tables/@{encodeURIComponent(encodeURIComponent('9583ad57-d746-4163-a616-96a4945cb3a5'))}/items/@{encodeURIComponent(variables('itemid'))}"
+                                },
+                                "runAfter": {
+                                    "Parse_JSON": [
+                                        "Succeeded"
+                                    ]
+                                },
+                                "type": "ApiConnection"
+                            }
+                        },
+                        "else": {
+                            "actions": {
+                                "getmailtemplateerror": {
+                                    "inputs": {
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                                            }
+                                        },
+                                        "method": "get",
+                                        "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/GT365'))}/GetFileContentByPath",
+                                        "queries": {
+                                            "inferContentType": true,
+                                            "path": "/Shared Documents/02-InviteGuest-email-error.html",
+                                            "queryParametersSingleEncoded": true
+                                        }
+                                    },
+                                    "runAfter": {
+                                        "updateerror": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "ApiConnection"
+                                },
+                                "replacebodyerror": {
+                                    "inputs": {
+                                        "name": "body",
+                                        "value": "@{replace(body('getmailtemplateerror'),'[email]',triggerBody()?['Title'])}"
+                                    },
+                                    "runAfter": {
+                                        "getmailtemplateerror": [
+                                            "Succeeded"
+                                        ]
+                                    },
+                                    "type": "SetVariable"
+                                },
+                                "updateerror": {
+                                    "inputs": {
+                                        "body": {
+                                            "Done": true,
+                                            "Status": "Error when creating the guest user: @{triggerBody()?['Title']}.\nError: @{outputs('CallGT365InviteGuest')['statusCode']}\nMessage: @{body('CallGT365InviteGuest')}\n",
+                                            "StatusCode": 2,
+                                            "Title": "@triggerBody()?['Title']"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                                            }
+                                        },
+                                        "method": "patch",
+                                        "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/Ignite'))}/tables/@{encodeURIComponent(encodeURIComponent('9583ad57-d746-4163-a616-96a4945cb3a5'))}/items/@{encodeURIComponent(variables('itemid'))}"
+                                    },
+                                    "runAfter": {},
+                                    "type": "ApiConnection"
+                                }
+                            }
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "equals": [
+                                        "@outputs('CallGT365InviteGuest')['statusCode']",
+                                        201
+                                    ]
+                                }
+                            ]
+                        },
+                        "runAfter": {
+                            "CallGT365InviteGuest": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "If"
+                    }
+                },
+                "else": {
+                    "actions": {
+                        "getmailtemplateexists": {
+                            "inputs": {
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                                    }
+                                },
+                                "method": "get",
+                                "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/GT365'))}/GetFileContentByPath",
+                                "queries": {
+                                    "inferContentType": true,
+                                    "path": "/Shared Documents/02-InviteGuest-email-error.html",
+                                    "queryParametersSingleEncoded": true
+                                }
+                            },
+                            "runAfter": {
+                                "updateexists": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection"
+                        },
+                        "replacebodyexists": {
+                            "inputs": {
+                                "name": "body",
+                                "value": "@{replace(body('getmailtemplateexists'),'[email]',triggerBody()?['Title'])}"
+                            },
+                            "runAfter": {
+                                "getmailtemplateexists": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "SetVariable"
+                        },
+                        "updateexists": {
+                            "inputs": {
+                                "body": {
+                                    "Done": true,
+                                    "Status": "Guest user @{triggerBody()?['Title']} already exists",
+                                    "StatusCode": 2,
+                                    "Title": "@triggerBody()?['Title']"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                                    }
+                                },
+                                "method": "patch",
+                                "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/Ignite'))}/tables/@{encodeURIComponent(encodeURIComponent('9583ad57-d746-4163-a616-96a4945cb3a5'))}/items/@{encodeURIComponent(variables('itemid'))}"
+                            },
+                            "runAfter": {},
+                            "type": "ApiConnection"
+                        }
+                    }
+                },
+                "expression": {
+                    "and": [
+                        {
+                            "equals": [
+                                "@length(body('FindDuplicates')?['value'])",
+                                0
+                            ]
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "FindDuplicates": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "If"
+            },
+            "FindDuplicates": {
+                "inputs": {
+                    "authentication": {
+                        "audience": "https://graph.microsoft.com/",
+                        "authority": "https://login.microsoft.com",
+                        "clientId": "@parameters('appid')",
+                        "secret": "@body('GetAppSecret')?['value']",
+                        "tenant": "@parameters('tenantid')",
+                        "type": "ActiveDirectoryOAuth"
+                    },
+                    "method": "GET",
+                    "uri": "https://graph.microsoft.com/v1.0/users?$filter=mail eq '@{triggerBody()?['Title']}' and UserType eq 'Guest'&$select=displayName,mail,id,UserPrincipalName"
+                },
+                "runAfter": {
+                    "inituserid": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "GetAppSecret": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/secrets/@{encodeURIComponent('secret')}/value"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "Send_an_email_(V2)": {
+                "inputs": {
+                    "body": {
+                        "Bcc": "@parameters('adminemail')",
+                        "Body": "<p>@{variables('body')}<br>\n</p>",
+                        "Subject": "GT365: Invite guest @{triggerBody()?['Title']}",
+                        "To": "@triggerBody()?['Author']?['Email']"
+                    },
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['office365']['connectionId']"
+                        }
+                    },
+                    "method": "post",
+                    "path": "/v2/Mail"
+                },
+                "runAfter": {
+                    "CheckDuplicates": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "initbody": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "body",
+                            "type": "string"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "inititemid": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "inititemid": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "itemid",
+                            "type": "integer",
+                            "value": "@triggerBody()?['ID']"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "GetAppSecret": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "inituserid": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "userid",
+                            "type": "string"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "initbody": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            },
+            "adminemail": {
+                "defaultValue": "toni@tpe5.onmicrosoft.com;martina@tpe5.onmicrosoft.com",
+                "type": "String"
+            },
+            "appid": {
+                "defaultValue": "fa0a1787-39d1-4d73-b25a-dc92968863a1",
+                "type": "String"
+            },
+            "sharepointsite": {
+                "defaultValue": "https://tpe5.sharepoint.com/sites/Ignite",
+                "type": "String"
+            },
+            "tenantid": {
+                "defaultValue": "f89d8982-a030-4c14-9b60-8dbd82b66428",
+                "type": "String"
+            }
+        },
+        "triggers": {
+            "When_an_item_is_created": {
+                "conditions": [],
+                "evaluatedRecurrence": {
+                    "frequency": "Day",
+                    "interval": 1
+                },
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://tpe5.sharepoint.com/sites/Ignite'))}/tables/@{encodeURIComponent(encodeURIComponent('9583ad57-d746-4163-a616-96a4945cb3a5'))}/onnewitems"
+                },
+                "recurrence": {
+                    "frequency": "Day",
+                    "interval": 1
+                },
+                "splitOn": "@triggerBody()?['value']",
+                "type": "ApiConnection"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "keyvault": {
+                    "connectionId": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.Web/connections/keyvault-1",
+                    "connectionName": "keyvault-1",
+                    "connectionProperties": {
+                        "authentication": {
+                            "identity": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.ManagedIdentity/userAssignedIdentities/UAMI4hiqttqs33peg",
+                            "type": "ManagedServiceIdentity"
+                        }
+                    },
+                    "id": "/subscriptions/<subscriptionid>/providers/Microsoft.Web/locations/westus2/managedApis/keyvault"
+                },
+                "office365": {
+                    "connectionId": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.Web/connections/office365",
+                    "connectionName": "office365",
+                    "id": "/subscriptions/<subscriptionid>/providers/Microsoft.Web/locations/westus2/managedApis/office365"
+                },
+                "sharepointonline": {
+                    "connectionId": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.Web/connections/sharepointonline",
+                    "connectionName": "sharepointonline",
+                    "id": "/subscriptions/<subscriptionid>/providers/Microsoft.Web/locations/westus2/managedApis/sharepointonline"
+                }
+            }
+        }
+    }
+}

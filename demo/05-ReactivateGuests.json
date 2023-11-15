@@ -1,0 +1,182 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "getConfig": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('09')}',RowKey='@{encodeURIComponent('config')}')"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "getGuests": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableGuestsCleanup'])}/entities",
+                    "queries": {
+                        "$filter": "Deleted eq false and EmployeeId eq ''"
+                    }
+                },
+                "runAfter": {
+                    "initConfig": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "guestsLoop": {
+                "actions": {
+                    "checkCanDelete": {
+                        "actions": {
+                            "deleteFromList": {
+                                "inputs": {
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                        }
+                                    },
+                                    "method": "delete",
+                                    "path": "/Tables/@{encodeURIComponent(variables('config')?['tableGuestsCleanup'])}/entities/etag(PartitionKey='@{encodeURIComponent(items('guestsLoop')?['PartitionKey'])}',RowKey='@{encodeURIComponent(items('guestsLoop')?['RowKey'])}')"
+                                },
+                                "runAfter": {},
+                                "type": "ApiConnection"
+                            }
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "equals": [
+                                        "@body('checkGuest')?['ToBeDeleted']",
+                                        false
+                                    ]
+                                }
+                            ]
+                        },
+                        "runAfter": {
+                            "checkGuest": [
+                                "Succeeded"
+                            ]
+                        },
+                        "type": "If"
+                    },
+                    "checkGuest": {
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuretables']['connectionId']"
+                                }
+                            },
+                            "method": "get",
+                            "path": "/Tables/@{encodeURIComponent('reportguests')}/entities(PartitionKey='@{encodeURIComponent(items('guestsLoop')?['PartitionKey'])}',RowKey='@{encodeURIComponent(items('guestsLoop')?['RowKey'])}')",
+                            "queries": {
+                                "$select": "ToBeDeleted"
+                            }
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                    }
+                },
+                "foreach": "@body('getGuests')?['value']",
+                "runAfter": {
+                    "getGuests": [
+                        "Succeeded"
+                    ]
+                },
+                "trackedProperties": {
+                    "ToBeDeleted": false
+                },
+                "type": "Foreach"
+            },
+            "initConfig": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "config",
+                            "type": "object",
+                            "value": "@json(body('getConfig')?['Value'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getConfig": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            },
+            "tableguests": {
+                "defaultValue": "reportguests",
+                "type": "String"
+            },
+            "tableguestscleanup": {
+                "defaultValue": "reportguestscleanup",
+                "type": "String"
+            }
+        },
+        "triggers": {
+            "Recurrence": {
+                "evaluatedRecurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            "1"
+                        ],
+                        "minutes": [
+                            30
+                        ]
+                    }
+                },
+                "recurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            "1"
+                        ],
+                        "minutes": [
+                            30
+                        ]
+                    }
+                },
+                "type": "Recurrence"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuretables": {
+                    "connectionId": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.Web/connections/azuretables",
+                    "connectionName": "azuretables",
+                    "id": "/subscriptions/<subscriptionid>/providers/Microsoft.Web/locations/westus2/managedApis/azuretables"
+                }
+            }
+        },
+        "tableguests": {
+            "value": "reportguests"
+        },
+        "tableguestscleanup": {
+            "value": "reportgueststobedeleted"
+        }
+    }
+}

@@ -1,0 +1,288 @@
+{
+    "definition": {
+        "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+        "actions": {
+            "getApp": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables_1']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('app')}',RowKey='@{encodeURIComponent('config')}')"
+                },
+                "runAfter": {
+                    "initConfig": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "getConfig": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['azuretables_1']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent('solutionConfig')}/entities(PartitionKey='@{encodeURIComponent('07')}',RowKey='@{encodeURIComponent('config')}')"
+                },
+                "runAfter": {},
+                "type": "ApiConnection"
+            },
+            "getsecret": {
+                "inputs": {
+                    "host": {
+                        "connection": {
+                            "name": "@parameters('$connections')['keyvault']['connectionId']"
+                        }
+                    },
+                    "method": "get",
+                    "path": "/secrets/@{encodeURIComponent('secret')}/value"
+                },
+                "runAfter": {
+                    "initApp": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "ApiConnection"
+            },
+            "getusers": {
+                "inputs": {
+                    "authentication": {
+                        "audience": "https://graph.microsoft.com/",
+                        "authority": "https://login.microsoft.com",
+                        "clientId": "@variables('app')?['clientid']",
+                        "secret": "@body('getsecret')?['value']",
+                        "tenant": "@variables('app')?['tenantid']",
+                        "type": "ActiveDirectoryOAuth"
+                    },
+                    "headers": {
+                        "content-type": "application/json"
+                    },
+                    "method": "GET",
+                    "uri": "https://graph.microsoft.com/v1.0/users?$select=id,userPrincipalName,displayName,signInActivity,externalUserState,externalUserStateChangeDateTime,assignedLicenses,accountEnabled,userType,employeeId,createdDateTime,userType"
+                },
+                "runAfter": {
+                    "getsecret": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Http"
+            },
+            "initApp": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "app",
+                            "type": "object",
+                            "value": "@json(body('getApp')?['Value'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getApp": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "initConfig": {
+                "inputs": {
+                    "variables": [
+                        {
+                            "name": "config",
+                            "type": "object",
+                            "value": "@json(body('getConfig')?['Value'])"
+                        }
+                    ]
+                },
+                "runAfter": {
+                    "getConfig": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "InitializeVariable"
+            },
+            "usersloop": {
+                "actions": {
+                    "checkGuest": {
+                        "inputs": {
+                            "host": {
+                                "connection": {
+                                    "name": "@parameters('$connections')['azuretables_1']['connectionId']"
+                                }
+                            },
+                            "method": "get",
+                            "path": "/Tables/@{encodeURIComponent(variables('config')?['tableGuestsCleanup'])}/entities(PartitionKey='@{encodeURIComponent(item()?['userType'])}',RowKey='@{encodeURIComponent(item()?['id'])}')"
+                        },
+                        "runAfter": {},
+                        "type": "ApiConnection"
+                    },
+                    "ifguestexists": {
+                        "actions": {
+                            "insertGuest": {
+                                "inputs": {
+                                    "body": {
+                                        "DateToDelete": "@addDays(utcNow(), parameters('deletedays'))",
+                                        "DateToDelete@odata.type": "Edm.DateTime",
+                                        "Deleted": false,
+                                        "DisplayName": "@{items('usersloop')?['displayName']}",
+                                        "Email": "@{if(equals(items('usersloop')?['userType'],'Guest'),concat(substring(substring(items('usersloop')?['userPrincipalName'], 0, indexOf(items('usersloop')?['userPrincipalName'], '#EXT#')), 0, lastIndexOf(substring(items('usersloop')?['userPrincipalName'], 0, indexOf(items('usersloop')?['userPrincipalName'], '#EXT#')), '_')),'@', substring(substring(items('usersloop')?['userPrincipalName'], 0, indexOf(items('usersloop')?['userPrincipalName'], '#EXT#')), add(lastIndexOf(substring(items('usersloop')?['userPrincipalName'], 0, indexOf(items('usersloop')?['userPrincipalName'], '#EXT#')), '_'), 1))),items('usersloop')?['userPrincipalName'])}",
+                                        "LastLoginDate": "@{if(equals(coalesce(items('usersloop')?['signInActivity']?['lastSignInDateTime'],'missing'),'missing'),'2000-01-01T12:00:00',items('usersloop')?['signInActivity']?['lastSignInDateTime'])}",
+                                        "LastLoginDate@odata.type": "Edm.DateTime",
+                                        "LastLoginDays": "@{if(equals(coalesce(items('usersloop')?['signInActivity']?['lastSignInDateTime'],'missing'),'missing'),-1,div(sub(ticks(utcNow()),ticks(formatDateTime(items('usersloop')?['signInActivity']?['lastSignInDateTime'],'yyyy-MM-dd'))),864000000000))}",
+                                        "LastLoginDays@odata.type": "Edm.Int32",
+                                        "Notified": false,
+                                        "UserPrincipalName": "@{items('usersloop')?['userPrincipalName']}"
+                                    },
+                                    "host": {
+                                        "connection": {
+                                            "name": "@parameters('$connections')['azuretables_1']['connectionId']"
+                                        }
+                                    },
+                                    "method": "patch",
+                                    "path": "/Tables/@{encodeURIComponent(variables('config')?['tableGuestsCleanup'])}/entities(PartitionKey='@{encodeURIComponent(items('usersloop')?['userType'])}',RowKey='@{encodeURIComponent(items('usersloop')?['id'])}')"
+                                },
+                                "runAfter": {},
+                                "type": "ApiConnection"
+                            }
+                        },
+                        "else": {
+                            "actions": {
+                                "updateGuest": {
+                                    "inputs": {
+                                        "body": {
+                                            "DateToDelete": "@addDays(utcNow(), parameters('deletedays'))",
+                                            "DateToDelete@odata.type": "Edm.DateTime",
+                                            "LastLoginDate": "@{if(equals(coalesce(items('usersloop')?['signInActivity']?['lastSignInDateTime'],'missing'),'missing'),'2000-01-01T12:00:00',items('usersloop')?['signInActivity']?['lastSignInDateTime'])}",
+                                            "LastLoginDate@odata.type": "Edm.DateTime",
+                                            "LastLoginDays": "@{if(equals(coalesce(items('usersloop')?['signInActivity']?['lastSignInDateTime'],'missing'),'missing'),-1,div(sub(ticks(utcNow()),ticks(formatDateTime(items('usersloop')?['signInActivity']?['lastSignInDateTime'],'yyyy-MM-dd'))),864000000000))}"
+                                        },
+                                        "headers": {
+                                            "If-Match": "@{body('checkGuest')?['ETag']}"
+                                        },
+                                        "host": {
+                                            "connection": {
+                                                "name": "@parameters('$connections')['azuretables_1']['connectionId']"
+                                            }
+                                        },
+                                        "method": "patch",
+                                        "path": "/v2/storageAccounts/@{encodeURIComponent(encodeURIComponent('AccountNameFromSettings'))}/tables/@{encodeURIComponent(variables('config')?['tableGuestsCleanup'])}/entities/etag(PartitionKey='@{encodeURIComponent(items('usersloop')?['userType'])}',RowKey='@{encodeURIComponent(items('usersloop')?['id'])}')"
+                                    },
+                                    "runAfter": {},
+                                    "type": "ApiConnection"
+                                }
+                            }
+                        },
+                        "expression": {
+                            "and": [
+                                {
+                                    "not": {
+                                        "equals": [
+                                            "@actions('checkGuest').outputs.statusCode",
+                                            200
+                                        ]
+                                    }
+                                }
+                            ]
+                        },
+                        "runAfter": {
+                            "checkGuest": [
+                                "Succeeded",
+                                "Failed"
+                            ]
+                        },
+                        "type": "If"
+                    }
+                },
+                "foreach": "@body('getusers')?['value']",
+                "runAfter": {
+                    "getusers": [
+                        "Succeeded"
+                    ]
+                },
+                "type": "Foreach"
+            }
+        },
+        "contentVersion": "1.0.0.0",
+        "outputs": {},
+        "parameters": {
+            "$connections": {
+                "defaultValue": {},
+                "type": "Object"
+            },
+            "days": {
+                "defaultValue": 150,
+                "type": "Int"
+            },
+            "deletedays": {
+                "defaultValue": 30,
+                "type": "Int"
+            },
+            "tablecleanup": {
+                "defaultValue": "reportguestscleanup",
+                "type": "String"
+            },
+            "tableguests": {
+                "defaultValue": "reportguests",
+                "type": "String"
+            }
+        },
+        "triggers": {
+            "Recurrence": {
+                "evaluatedRecurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            "2"
+                        ]
+                    },
+                    "timeZone": "Pacific Standard Time"
+                },
+                "recurrence": {
+                    "frequency": "Day",
+                    "interval": 1,
+                    "schedule": {
+                        "hours": [
+                            "2"
+                        ]
+                    },
+                    "timeZone": "Pacific Standard Time"
+                },
+                "type": "Recurrence"
+            }
+        }
+    },
+    "parameters": {
+        "$connections": {
+            "value": {
+                "azuretables_1": {
+                    "connectionId": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.Web/connections/azuretables",
+                    "connectionName": "azuretables",
+                    "id": "/subscriptions/<subscriptionid>/providers/Microsoft.Web/locations/westus2/managedApis/azuretables"
+                },
+                "keyvault": {
+                    "connectionId": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.Web/connections/keyvault-1",
+                    "connectionName": "keyvault-1",
+                    "connectionProperties": {
+                        "authentication": {
+                            "identity": "/subscriptions/<subscriptionid>/resourceGroups/RG-Ignite/providers/Microsoft.ManagedIdentity/userAssignedIdentities/UAMI4hiqttqs33peg",
+                            "type": "ManagedServiceIdentity"
+                        }
+                    },
+                    "id": "/subscriptions/<subscriptionid>/providers/Microsoft.Web/locations/westus2/managedApis/keyvault"
+                }
+            }
+        },
+        "tablecleanup": {
+            "value": "reportguestscleanup"
+        },
+        "tableguests": {
+            "value": "reportguests"
+        }
+    }
+}
